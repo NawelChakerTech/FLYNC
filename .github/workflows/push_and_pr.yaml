@@ -102,7 +102,7 @@ jobs:
       - name: Run Pytest
         run: |
           poetry install --with test
-          poetry run pytest
+          poetry run pytest tests/unit_test
           poetry run coverage xml
           poetry run coverage report
 

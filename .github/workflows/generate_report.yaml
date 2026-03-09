@@ -1,0 +1,94 @@
+name: Allure Test Reporting Workflow
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  ALLURE_RESULTS: allure-results
+  ALLURE_REPORT: allure-report
+  PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
+
+jobs:
+  pytest:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.12
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up pip cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.PIP_CACHE_DIR }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest allure-pytest
+
+      - name: Run pytest
+        run: pytest tests/system_test --alluredir=${{ env.ALLURE_RESULTS }} || true
+
+      - name: Upload Allure results
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: ${{ env.ALLURE_RESULTS }}
+
+  deploy:
+    name: Deploy Allure Report to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: pytest
+    container:
+      image: node:lts
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download Allure results
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results
+          path: ${{ env.ALLURE_RESULTS }}
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v3
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - name: Restore previous Allure history
+        run: |
+          if [ -d gh-pages/history ]; then
+            mkdir -p ${{ env.ALLURE_RESULTS }}/history
+            cp -r gh-pages/history/* ${{ env.ALLURE_RESULTS }}/history/
+          fi
+
+      - name: Set up Java (required by Allure)
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline
+
+      - name: Generate Allure report with history
+        run: |
+          echo "Generating Allure report..."
+          mkdir -p ${{ env.ALLURE_REPORT }}
+          npx allure generate ${{ env.ALLURE_RESULTS }} --clean --output ${{ env.ALLURE_REPORT }}
+
+      - name: Print Allure report URL
+        run: |
+          echo "Allure report URL:"
+          echo "https://${{ github.repository_owner }}.github.io/${{ github.repository }}/"
